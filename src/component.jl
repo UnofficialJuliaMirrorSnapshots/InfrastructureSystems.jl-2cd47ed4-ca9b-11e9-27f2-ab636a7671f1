@@ -232,9 +232,9 @@ end
                            horizon::Int,
                           )
 
-Generates all possible initial times for the stored forecasts. This should be used when
-contiguous forecasts have been stored in chunks, such as a one-year forecast broken up into
-365 one-day forecasts.
+Generates all possible initial times for the stored forecasts. This should return the same
+result regardless of whether the forecasts have been stored as one contiguous array or
+chunks of contiguous arrays, such as one 365-day forecast vs 365 one-day forecasts.
 
 Throws ArgumentError if there are no forecasts stored, interval is not a multiple of the
 system's forecast resolution, or if the stored forecasts have overlapping timestamps.
@@ -316,6 +316,15 @@ function get_forecast_labels(
     return get_forecast_labels(forecast_external_to_internal(T),
                                _get_forecast_container(component),
                                initial_time)
+end
+
+function get_num_forecasts(component::InfrastructureSystemsType)
+    container = _get_forecast_container(component)
+    if isnothing(container)
+        return 0
+    end
+
+    return length(container.data)
 end
 
 function get_time_series(component::InfrastructureSystemsType, forecast::Forecast)

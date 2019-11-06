@@ -1,5 +1,14 @@
 # InfrastructureSystems
 
+## 0.2.4
+
+- Return components from remove_component functions
+- Fix incorrect docstrings
+
+## 0.2.3
+
+- Subsetting of HDF5 file when reading forecast data
+
 ## 0.2.2
 
 - Automatic deletition of the temporary files
