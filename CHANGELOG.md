@@ -1,5 +1,18 @@
 # InfrastructureSystems
 
+## 0.4.1
+
+- Update docstring printing in auto generation code
+
+## 0.4.0
+
+- Add validation for contigous forecasts
+- Bug fix in table data parsing
+
+## 0.3.0
+
+- Use accessor functions to retrieve forecasts instead of labels
+
 ## 0.2.4
 
 - Return components from remove_component functions

@@ -2,12 +2,6 @@ function add_forecast!(
                        component::T,
                        forecast::ForecastInternal,
                       ) where T <: InfrastructureSystemsType
-    label = get_label(forecast)
-    if !in(Symbol(label), fieldnames(T))
-        #throw(ArgumentError("$label is not a field of $T"))
-        @warn "$label is not a field of $T; get_forecast_values will not work" forecast
-    end
-
     add_forecast!(_get_forecast_container(component), forecast)
     @debug "Added $forecast to $(typeof(component)) $(component.name) " *
            "num_forecasts=$(length(component._forecasts.data))."
@@ -158,19 +152,23 @@ component field.
 """
 function get_forecast_values(
                              ::Type{T},
+                             mod::Module,
                              component::InfrastructureSystemsType,
                              initial_time::Dates.DateTime,
                              label::AbstractString,
                             ) where T <: Forecast
     forecast = get_forecast(T, component, initial_time, label)
-    return get_forecast_values(component, forecast)
+    return get_forecast_values(mod, component, forecast)
 end
 
-function get_forecast_values(component::InfrastructureSystemsType, forecast::Forecast)
+function get_forecast_values(
+                             mod::Module,
+                             component::InfrastructureSystemsType,
+                             forecast::Forecast)
     scaling_factors = get_data(forecast)
     label = get_label(forecast)
-    value = getfield(component, Symbol(label))
-    data = scaling_factors .* value
+    accessor_func = getfield(mod, Symbol(label))
+    data = scaling_factors .* accessor_func(component)
     return data
 end
 
@@ -229,7 +227,8 @@ end
     generate_initial_times(
                            component::InfrastructureSystemsType,
                            interval::Dates.Period,
-                           horizon::Int,
+                           horizon::Int;
+                           initial_time::Union{Nothing, Dates.DateTime}=nothing,
                           )
 
 Generates all possible initial times for the stored forecasts. This should return the same
@@ -238,11 +237,19 @@ chunks of contiguous arrays, such as one 365-day forecast vs 365 one-day forecas
 
 Throws ArgumentError if there are no forecasts stored, interval is not a multiple of the
 system's forecast resolution, or if the stored forecasts have overlapping timestamps.
+
+# Arguments
+- `component::InfrastructureSystemsType`: Component containing forecasts.
+- `interval::Dates.Period`: Amount of time in between each initial time.
+- `horizon::Int`: Length of each forecast array.
+- `initial_time::Union{Nothing, Dates.DateTime}=nothing`: Start with this time. If nothing,
+  use the first initial time.
 """
 function generate_initial_times(
                                 component::InfrastructureSystemsType,
                                 interval::Dates.Period,
-                                horizon::Int,
+                                horizon::Int;
+                                initial_time::Union{Nothing, Dates.DateTime}=nothing,
                                )
     # This throws if no forecasts.
     existing_initial_times = get_forecast_initial_times(component)
@@ -251,9 +258,14 @@ function generate_initial_times(
     resolution = Dates.Second(get_resolution(first_forecast))
     sys_horizon = get_horizon(first_forecast)
 
-    initial_time, total_horizon = check_contiguous_forecasts(
+    first_initial_time, total_horizon = check_contiguous_forecasts(
         component, existing_initial_times, resolution, sys_horizon,
     )
+
+    if isnothing(initial_time)
+        initial_time = first_initial_time
+    end
+
     interval = Dates.Second(interval)
 
     if interval % resolution != Dates.Second(0)
@@ -262,19 +274,43 @@ function generate_initial_times(
         ))
     end
 
-    step_length = Int(interval / resolution)
-    last_initial_time_index = total_horizon - horizon
-    num_initial_times = Int(trunc(last_initial_time_index / step_length)) + 1
-    initial_times = Vector{Dates.DateTime}(undef, num_initial_times)
-
-    index = 1
-    for i in range(0, step=step_length, stop=last_initial_time_index)
-        initial_times[index] = initial_time + i * resolution
-        index += 1
+    last_initial_time = first_initial_time + total_horizon * resolution -
+                        horizon * resolution
+    initial_times = Vector{Dates.DateTime}()
+    for it in range(initial_time, step=interval, stop=last_initial_time)
+        push!(initial_times, it)
     end
 
-    @assert index - 1 == num_initial_times
     return initial_times
+end
+
+"""
+    are_forecasts_contiguous(component::InfrastructureSystemsType)
+"""
+function are_forecasts_contiguous(component::InfrastructureSystemsType)
+    existing_initial_times = get_forecast_initial_times(component)
+    first_initial_time = existing_initial_times[1]
+
+    first_forecast = iterate(iterate_forecasts(component))[1]
+    resolution = Dates.Second(get_resolution(first_forecast))
+    horizon = get_horizon(first_forecast)
+    total_horizon = horizon * length(existing_initial_times)
+
+    return _are_forecasts_contiguous(existing_initial_times, resolution, horizon)
+end
+
+function _are_forecasts_contiguous(initial_times, resolution, horizon)
+    if length(initial_times) == 1
+        return true
+    end
+
+    for i in range(2, stop=length(initial_times))
+        if initial_times[i] != initial_times[i - 1] + resolution * horizon
+            return false
+        end
+    end
+
+    return true
 end
 
 """
@@ -286,21 +322,14 @@ function check_contiguous_forecasts(
                                     resolution::Dates.Period,
                                     horizon::Int
                                    )
+    if !_are_forecasts_contiguous(existing_initial_times, resolution, horizon)
+        throw(ArgumentError(
+            "generate_initial_times is not allowed with overlapping timestamps"
+        ))
+    end
+
     first_initial_time = existing_initial_times[1]
     total_horizon = horizon * length(existing_initial_times)
-
-    if length(existing_initial_times) == 1
-        return first_initial_time, total_horizon
-    end
-
-    for i in range(2, stop=length(existing_initial_times))
-        if existing_initial_times[i] != existing_initial_times[i - 1] + resolution * horizon
-            throw(ArgumentError(
-                "generate_initial_times is not allowed with overlapping timestamps"
-            ))
-        end
-    end
-
     return first_initial_time, total_horizon
 end
 
