@@ -1,5 +1,13 @@
 # InfrastructureSystems
 
+## 0.4.3
+
+- Fix inital time generation from contiguous forecasts 
+
+## 0.4.2
+
+- Fix docstring creation in struct generation code
+
 ## 0.4.1
 
 - Update docstring printing in auto generation code
